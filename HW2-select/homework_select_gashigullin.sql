@@ -69,7 +69,7 @@ select o.OrderID,
 from Sales.Orders o
 join Sales.Customers c on o.CustomerID = c.CustomerID
 join Sales.OrderLines ol on o.OrderID = ol.OrderID
-where ol.UnitPrice > 100 and ol.Quantity > 20 and o.PickingCompletedWhen is not null
+where (ol.UnitPrice > 100 or ol.Quantity > 20) and o.PickingCompletedWhen is not null
 order by [Квартал], [Треть года], OrderDate
 
 -- с постраничной выборкой
@@ -82,7 +82,7 @@ select o.OrderID,
 from Sales.Orders o
 join Sales.Customers c on o.CustomerID = c.CustomerID
 join Sales.OrderLines ol on o.OrderID = ol.OrderID
-where ol.UnitPrice > 100 and ol.Quantity > 20 and o.PickingCompletedWhen is not null
+where (ol.UnitPrice > 100 or ol.Quantity > 20) and o.PickingCompletedWhen is not null
 order by [Квартал], [Треть года], OrderDate offset 1000 rows
 fetch next 100 rows only
 
