@@ -75,15 +75,15 @@ select f.Year, f.Month, si.StockItemName, f.TotalSum, f.FirstInvoice, f.Quantity
 from 
 (
 	select year(i.InvoiceDate) as Year,
-	month(i.InvoiceDate) as Month,
-	il.StockItemId,
-	sum(il.UnitPrice * il.Quantity) as TotalSum,
-	min(i.InvoiceDate) as FirstInvoice,
-	sum(il.Quantity) as Quantity
+		month(i.InvoiceDate) as Month,
+		il.StockItemId,
+		sum(il.UnitPrice * il.Quantity) as TotalSum,
+		min(i.InvoiceDate) as FirstInvoice,
+		sum(il.Quantity) as Quantity
 	from Sales.Invoices i
 	join Sales.InvoiceLines il on i.InvoiceID = il.InvoiceID
-	where il.Quantity < 50
 	group by year(i.InvoiceDate), month(i.InvoiceDate), il.StockItemID
+	having sum(il.Quantity) < 50
 ) as f
 join Warehouse.StockItems si on f.StockItemID = si.StockItemID
 
@@ -94,3 +94,68 @@ join Warehouse.StockItems si on f.StockItemID = si.StockItemID
 Написать запросы 2-3 так, чтобы если в каком-то месяце не было продаж,
 то этот месяц также отображался бы в результатах, но там были нули.
 */
+
+--Второе задание
+declare @maxDate datetime;
+select @maxDate = max(InvoiceDate) from Sales.Invoices;
+
+;with Dates as
+(
+	select datetrunc(month, min(InvoiceDate)) as Date from Sales.Invoices
+	union all
+	select dateadd(month, 1, Date) from Dates
+	where dateadd(month, 1, Date) < @maxDate
+),
+YearsAndMonths as
+(
+	select year(Date) as Year, month(Date) as Month
+	from Dates
+),
+TotalSums as
+(
+	select year(i.InvoiceDate) as Year, month(i.InvoiceDate) as Month, sum(il.UnitPrice * il.Quantity) as TotalSum
+	from Sales.Invoices i
+	join Sales.InvoiceLines il on i.InvoiceID = il.InvoiceID
+	group by year(i.InvoiceDate), month(i.InvoiceDate)
+)
+select ym.Year, ym.Month, isnull(TotalSum, 0) as TotalSum
+from YearsAndMonths ym
+left join TotalSums ts on 
+	ym.Year = ts.Year and ym.Month = ts.Month
+where ts.TotalSum > 4600000 or ts.TotalSum is null
+
+
+--Третье задание
+declare @maxDate1 datetime;
+select @maxDate1 = max(InvoiceDate) from Sales.Invoices;
+
+;with Dates as
+(
+	select datetrunc(month, min(InvoiceDate)) as Date from Sales.Invoices
+	union all
+	select dateadd(month, 1, Date) from Dates
+	where dateadd(month, 1, Date) < @maxDate1
+),
+YearsAndMonths as
+(
+	select year(Date) as Year, month(Date) as Month
+	from Dates
+),
+TotalSums as
+(
+	select year(i.InvoiceDate) as Year,
+		month(i.InvoiceDate) as Month,
+		il.StockItemId,
+		sum(il.UnitPrice * il.Quantity) as TotalSum,
+		min(i.InvoiceDate) as FirstInvoice,
+		sum(il.Quantity) as Quantity
+	from Sales.Invoices i
+	join Sales.InvoiceLines il on i.InvoiceID = il.InvoiceID
+	group by year(i.InvoiceDate), month(i.InvoiceDate), il.StockItemID
+	having sum(il.Quantity) < 50
+)
+select ym.Year, ym.Month, StockItemId, isnull(TotalSum, 0) as TotalSum, FirstInvoice, isnull(Quantity, 0) as Quantity
+from YearsAndMonths ym
+left join TotalSums ts on 
+	ym.Year = ts.Year and ym.Month = ts.Month
+order by Year, Month
