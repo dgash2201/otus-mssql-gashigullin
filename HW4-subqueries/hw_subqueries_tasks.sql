@@ -84,13 +84,13 @@ join TopFiveCustomers tfc on c.CustomerID = tfc.CustomerID
 который осуществлял упаковку заказов (PackedByPersonID).
 */
 
-select c.CityID, c.CityName, p.FullName as PackedByPerson
+select c.CityID, c.CityName, p.FullName as PackedByPerson, il.StockItemID
 from Application.Cities c
 join Sales.Customers cr on cr.DeliveryCityID = c.CityID
 join Sales.Invoices i on i.CustomerID = cr.CustomerID
 join Sales.InvoiceLines il on i.InvoiceID = il.InvoiceID
 join Application.People p on p.PersonID = i.PackedByPersonID
-where il.StockItemID in (select top 3 StockItemID from Warehouse.StockItems order by UnitPrice desc)
+where il.StockItemID in (select top 3 with ties StockItemID from Warehouse.StockItems order by UnitPrice desc)
 
 -- ---------------------------------------------------------------------------
 -- Опциональное задание
