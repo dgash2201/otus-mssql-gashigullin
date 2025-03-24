@@ -28,3 +28,5 @@ external name CLRFunctions.DateGenerator.GenerateDates
 
 
 select * from GenerateDatesCLR('2000-07-12', '2001-12-12', 'month', 1)
+
+select dateadd(yy, 1, getdate())
