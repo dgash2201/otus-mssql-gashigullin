@@ -63,10 +63,133 @@ CREATE SERVICE [//WWI/SB/InitiatorService]
 ON QUEUE InitiatorQueueWWI
 ([//WWI/SB/Contract]);
 
+
 --Создаем процедуры в скрипте CreateProcedure
+
 --1. SendNewInvoice.sql - процедура которая вызывается в процессе какого-то техпроцесса - НЕ АКТИВАЦИОННАЯ для очередей
+CREATE PROCEDURE Sales.SendNewInvoice
+	@invoiceId INT
+AS
+BEGIN
+	SET NOCOUNT ON;
+
+    --Sending a Request Message to the Target	
+	DECLARE @InitDlgHandle UNIQUEIDENTIFIER;
+	DECLARE @RequestMessage NVARCHAR(4000);
+	
+	BEGIN TRAN --на всякий случай в транзакции, т.к. это еще не относится к транзакции ПЕРЕДАЧИ сообщения
+
+	--Формируем XML с корнем RequestMessage где передадим номер инвойса(в принципе сообщение может быть любым)
+	SELECT @RequestMessage = (SELECT InvoiceID
+							  FROM Sales.Invoices AS Inv
+							  WHERE InvoiceID = @invoiceId
+							  FOR XML AUTO, root('RequestMessage')); 
+	
+	
+	--Создаем диалог
+	BEGIN DIALOG @InitDlgHandle
+	FROM SERVICE
+	[//WWI/SB/InitiatorService] --от этого сервиса(это сервис текущей БД, поэтому он НЕ строка)
+	TO SERVICE
+	'//WWI/SB/TargetService'    --к этому сервису(это сервис который может быть где-то, поэтому строка)
+	ON CONTRACT
+	[//WWI/SB/Contract]         --в рамках этого контракта
+	WITH ENCRYPTION=OFF;        --не шифрованный
+
+	--отправляем одно наше подготовленное сообщение, но можно отправить и много сообщений, которые будут обрабатываться строго последовательно)
+	SEND ON CONVERSATION @InitDlgHandle 
+	MESSAGE TYPE
+	[//WWI/SB/RequestMessage]
+	(@RequestMessage);
+	
+	--Это для визуализации - на проде это не нужно
+	SELECT @RequestMessage AS SentRequestMessage;
+	
+	COMMIT TRAN 
+END
+GO
+
 --2. GetNewInvoice.sql - АКТИВАЦИОННАЯ процедура(всегда без параметров)
+CREATE PROCEDURE Sales.GetNewInvoice --будет получать сообщение на таргете
+AS
+BEGIN
+
+	DECLARE @TargetDlgHandle UNIQUEIDENTIFIER,
+			@Message NVARCHAR(4000),
+			@MessageType Sysname,
+			@ReplyMessage NVARCHAR(4000),
+			@ReplyMessageName Sysname,
+			@InvoiceID INT,
+			@xml XML; 
+	
+	BEGIN TRAN; 
+
+	--Получаем сообщение от инициатора которое находится у таргета
+	RECEIVE TOP(1) --обычно одно сообщение, но можно пачкой
+		@TargetDlgHandle = Conversation_Handle, --ИД диалога
+		@Message = Message_Body, --само сообщение
+		@MessageType = Message_Type_Name --тип сообщения( в зависимости от типа можно по разному обрабатывать) обычно два - запрос и ответ
+	FROM dbo.TargetQueueWWI; --имя очереди которую мы ранее создавали
+
+	SELECT @Message; --не для прода
+
+	SET @xml = CAST(@Message AS XML);
+
+	--достали ИД
+	SELECT @InvoiceID = R.Iv.value('@InvoiceID','INT') --тут используется язык XPath и он регистрозависимый в отличии от TSQL
+	FROM @xml.nodes('/RequestMessage/Inv') as R(Iv);
+
+	IF EXISTS (SELECT * FROM Sales.Invoices WHERE InvoiceID = @InvoiceID)
+	BEGIN
+		UPDATE Sales.Invoices
+		SET InvoiceConfirmedForProcessing = GETUTCDATE() --просто устанавливаем текущую дату в ранее созданном нами поле
+		WHERE InvoiceId = @InvoiceID;
+	END;
+	
+	SELECT @Message AS ReceivedRequestMessage, @MessageType; --не для прода
+	
+	-- Confirm and Send a reply
+	IF @MessageType=N'//WWI/SB/RequestMessage' --если наш тип сообщения
+	BEGIN
+		SET @ReplyMessage =N'<ReplyMessage> Message received</ReplyMessage>'; --ответ
+	    --отправляем сообщение нами придуманное, что все прошло хорошо
+		SEND ON CONVERSATION @TargetDlgHandle
+		MESSAGE TYPE
+		[//WWI/SB/ReplyMessage]
+		(@ReplyMessage);
+		END CONVERSATION @TargetDlgHandle; --А вот и завершение диалога!!! - оно двухстороннее(пока-пока) ЭТО первый ПОКА
+		                                   --НЕЛЬЗЯ ЗАВЕРШАТЬ ДИАЛОГ ДО ОТПРАВКИ ПЕРВОГО СООБЩЕНИЯ
+	END 
+	
+	SELECT @ReplyMessage AS SentReplyMessage; --не для прода - это для теста
+
+	COMMIT TRAN;
+END
+
 --3. ConfirmInvoice.sql - АКТИВАЦИОННАЯ процедура - обработка сообщения что все прошло хорошо
+--ответ на первое ПОКА
+CREATE PROCEDURE Sales.ConfirmInvoice
+AS
+BEGIN
+	--Receiving Reply Message from the Target.	
+	DECLARE @InitiatorReplyDlgHandle UNIQUEIDENTIFIER,
+			@ReplyReceivedMessage NVARCHAR(1000) 
+	
+	BEGIN TRAN; 
+
+	    --Получаем сообщение от таргета которое находится у инициатора
+		RECEIVE TOP(1)
+			@InitiatorReplyDlgHandle=Conversation_Handle
+			,@ReplyReceivedMessage=Message_Body
+		FROM dbo.InitiatorQueueWWI; 
+		
+		END CONVERSATION @InitiatorReplyDlgHandle; --ЭТО второй ПОКА
+		
+		SELECT @ReplyReceivedMessage AS ReceivedRepliedMessage; --не для прода
+
+	COMMIT TRAN; 
+END
+
 
 --тепер настроим ОЧЕРЕДЬ или так можем рулить прецессами связанными с очередями
 USE [WideWorldImporters]
