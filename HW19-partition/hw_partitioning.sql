@@ -4,6 +4,7 @@ alter database WideWorldImporters add filegroup CT_2013
 alter database WideWorldImporters add filegroup CT_2014
 alter database WideWorldImporters add filegroup CT_2015
 alter database WideWorldImporters add filegroup CT_2016
+alter database WideWorldImporters add filegroup CT_2017
 go
 
 alter database WideWorldImporters add file (name = 'ct2013', filename = 'C:\Test\ct2013.ndf') to filegroup CT_2013
